@@ -300,13 +300,40 @@ def simple(project):
 
     current_uri = request_fullpath(request)
 
-    links = (
-        (
-            os.path.basename(pkg.relfn),
-            urljoin(current_uri, f"../../packages/{pkg.fname_and_hash}"),
+    # Get cached links from the query string if available
+    cached_links = request.query.get('cached_links')
+    if cached_links:
+        try:
+            import json
+            cached_data = json.loads(cached_links)
+            # Format: {filename: external_url}
+            links = []
+            for pkg in packages:
+                basename = os.path.basename(pkg.relfn)
+                external_url = cached_data.get(pkg.relfn_unix)
+                if external_url:
+                    # Add redirect_url parameter to the package URL
+                    modified_url = f"../../packages/{pkg.fname_and_hash}?redirect_url={quote(external_url)}"
+                    links.append((basename, urljoin(current_uri, modified_url)))
+                else:
+                    links.append((basename, urljoin(current_uri, f"../../packages/{pkg.fname_and_hash}")))
+        except Exception as e:
+            log.warning(f"Failed to parse cached_links: {e}")
+            links = (
+                (
+                    os.path.basename(pkg.relfn),
+                    urljoin(current_uri, f"../../packages/{pkg.fname_and_hash}"),
+                )
+                for pkg in packages
+            )
+    else:
+        links = (
+            (
+                os.path.basename(pkg.relfn),
+                urljoin(current_uri, f"../../packages/{pkg.fname_and_hash}"),
+            )
+            for pkg in packages
         )
-        for pkg in packages
-    )
 
     tmpl = """<!DOCTYPE html>
 <html lang="en">
@@ -335,9 +362,31 @@ def list_packages():
         key=lambda x: (os.path.dirname(x.relfn), x.pkgname, x.parsed_version),
     )
 
-    links = (
-        (pkg.relfn_unix, urljoin(fp, pkg.fname_and_hash)) for pkg in packages
-    )
+    # Get cached links from the query string if available
+    cached_links = request.query.get('cached_links')
+    if cached_links:
+        try:
+            import json
+            cached_data = json.loads(cached_links)
+            # Format: {filename: external_url}
+            links = []
+            for pkg in packages:
+                external_url = cached_data.get(pkg.relfn_unix)
+                if external_url:
+                    # Add redirect_url parameter to the package URL
+                    modified_url = f"{urljoin(fp, pkg.fname_and_hash)}?redirect_url={quote(external_url)}"
+                    links.append((pkg.relfn_unix, modified_url))
+                else:
+                    links.append((pkg.relfn_unix, urljoin(fp, pkg.fname_and_hash)))
+        except Exception as e:
+            log.warning(f"Failed to parse cached_links: {e}")
+            links = (
+                (pkg.relfn_unix, urljoin(fp, pkg.fname_and_hash)) for pkg in packages
+            )
+    else:
+        links = (
+            (pkg.relfn_unix, urljoin(fp, pkg.fname_and_hash)) for pkg in packages
+        )
 
     tmpl = """<!DOCTYPE html>
 <html lang="en">
@@ -364,6 +413,12 @@ def server_static(filename):
     for x in entries:
         f = x.relfn_unix
         if f == filename:
+            # Check if an external URL is provided in the query string
+            external_url = request.query.get('redirect_url')
+            if external_url:
+                # Return a redirect to the external URL
+                return redirect(external_url, 302)
+
             response = static_file(
                 filename,
                 root=x.root,

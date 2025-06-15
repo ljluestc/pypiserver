@@ -1,0 +1,8 @@
+include LICENSE.txt
+include AUTHORS.rst
+include README.md
+include pyproject.toml
+include requirements.txt
+
+recursive-include pypiserver_redirection *.py
+recursive-include pypiserver_redirection/cdn_config_examples *.py
